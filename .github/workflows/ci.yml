@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+      - name: Install dependencies
+        run: |
+          uv sync --all-packages
+      - name: Install dev dependencies
+        run: |
+          cd backend && uv sync --extra dev
+      - name: Run ruff (lint)
+        run: |
+          uv run ruff check backend worker shared
+      - name: Run mypy (typecheck)
+        run: |
+          uv run mypy backend worker shared || true
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Run ESLint
+        working-directory: frontend
+        run: npm run lint
+      - name: Run TypeScript typecheck
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+  integration-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: etl_user
+          POSTGRES_PASSWORD: etl_password
+          POSTGRES_DB: etl_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+      - name: Install dependencies
+        run: |
+          uv sync --all-packages
+          cd backend && uv sync --extra dev
+      - name: Run migrations
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://etl_user:etl_password@localhost:5432/etl_db
+        run: |
+          uv run alembic upgrade head
+      - name: Start backend
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://etl_user:etl_password@localhost:5432/etl_db
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: test-secret-for-ci
+          ADMIN_EMAIL: admin@example.com
+          ADMIN_PASSWORD: adminpassword
+          OTEL_ENABLED: false
+        run: |
+          uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          echo $! > backend.pid
+      - name: Start worker
+        working-directory: .
+        env:
+          DATABASE_URL: postgresql://etl_user:etl_password@localhost:5432/etl_db
+          REDIS_URL: redis://localhost:6379/0
+          UPLOAD_ROOT: ${{ github.workspace }}/backend
+          OTEL_ENABLED: false
+        run: |
+          uv run --package worker celery -A worker_main.celery_app worker --loglevel=INFO --concurrency=1 &
+          echo $! > worker.pid
+      - name: Wait for backend
+        run: |
+          for i in {1..30}; do
+            if curl -f http://localhost:8000/api/health > /dev/null 2>&1; then
+              echo "Backend is up"
+              break
+            fi
+            echo "Waiting for backend... ($i/30)"
+            sleep 1
+          done
+          curl -f http://localhost:8000/api/health || exit 1
+      - name: Run smoke test
+        working-directory: .
+        env:
+          SMOKE_BASE_URL: http://localhost:8000
+          SMOKE_TIMEOUT: 60
+        run: |
+          uv run --package backend python tests/smoke/smoke_import.py
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -f backend.pid ]; then kill $(cat backend.pid) 2>/dev/null || true; fi
+          if [ -f worker.pid ]; then kill $(cat worker.pid) 2>/dev/null || true; fi

@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# uv
+uv.lock
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+.turbo/
+
+# VS Code / IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Uploaded files (backend)
+backend/storage/
+storage/
+
+# Env files (do not commit real secrets)
+.env
+.env.*.local
+.env.local
+.env.production
+.env.development
+.env.test
+

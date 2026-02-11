@@ -1,0 +1,22 @@
+[project]
+name = "etl-worker"
+version = "0.1.0"
+description = "Celery worker for ETL Studio import runs"
+requires-python = ">=3.12"
+dependencies = [
+    "app-shared",
+    "boto3>=1.35.0",
+    "celery[redis]>=5.4.0",
+    "opentelemetry-instrumentation-celery>=0.49b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.49b0",
+]
+
+[tool.uv.sources]
+app-shared = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tasks"]

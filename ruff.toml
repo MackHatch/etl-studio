@@ -1,0 +1,10 @@
+# Ruff lint for backend, worker, shared
+target-version = "py312"
+line-length = 100
+
+[lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
+
+[lint.per-file-ignores]
+"tests/*" = ["S101"]
