@@ -2,6 +2,28 @@
 
 A production-ready ETL pipeline for importing and analyzing marketing data. Upload CSV files, map columns to canonical fields, process with retries and DLQ, and view analytics dashboards.
 
+## 2-Minute Demo
+
+**One command** to run the full demo:
+
+```bash
+make demo
+```
+
+This resets the database, seeds **Acme Marketing** (org + 3 users, datasets, runs), and starts the full stack. You'll see:
+
+- **App:** http://localhost:3000  
+- **Demo login:** `admin@acme.com` / `DemoPass123!`  
+- **In-app guide:** http://localhost:3000/demo  
+
+The `/demo` page has a step-by-step walkthrough with links to each screen (Login → Create dataset → Upload → Mapping → Results → Analytics).
+
+| User              | Password     | Role   |
+|-------------------|--------------|--------|
+| admin@acme.com    | DemoPass123! | ADMIN  |
+| analyst@acme.com  | DemoPass123! | ADMIN  |
+| member@acme.com   | DemoPass123! | MEMBER |
+
 ## Features
 
 - **CSV Import Pipeline**: Upload CSV → map columns → process → view results

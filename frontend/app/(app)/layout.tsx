@@ -65,6 +65,12 @@ export default function AppLayout({
             >
               Team
             </Link>
+            <Link
+              href="/demo"
+              className="text-sm font-medium text-gray-700 hover:text-gray-900"
+            >
+              Demo
+            </Link>
             {user?.role === "ADMIN" && (
               <Link
                 href="/admin/runs"

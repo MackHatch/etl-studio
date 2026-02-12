@@ -2,17 +2,23 @@
 
 This directory should contain screenshots for the ETL Studio demo walkthrough. Use these placeholders and capture instructions.
 
+## Browser & Size
+
+- **Browser:** Chrome or Edge
+- **Window size:** 1920×1080 (or full-screen)
+- **Data:** Run `make demo` for seeded Acme Marketing org and datasets
+
 ## Checklist
 
 - [ ] 01-login.png
-- [ ] 02-datasets-list.png
+- [ ] 02-dashboard.png (datasets list - first page after login)
 - [ ] 03-dataset-upload.png
 - [ ] 04-mapping.png
 - [ ] 05-run-progress.png
 - [ ] 06-results.png
 - [ ] 07-analytics.png
 - [ ] 08-admin-runs.png
-- [ ] 09-attempts.png
+- [ ] 09-compare-runs.png
 - [ ] 10-jaeger.png
 - [ ] 11-minio-console.png (S3 storage)
 
@@ -23,10 +29,10 @@ This directory should contain screenshots for the ETL Studio demo walkthrough. U
 **Description:** Login form with email/password fields  
 **Capture:** Navigate to `/login`, show the form
 
-### 2. Datasets List
-**File:** `02-datasets-list.png`  
-**Description:** List of datasets with "Create dataset" button  
-**Capture:** After login, show `/datasets` page
+### 2. Dashboard (Datasets List)
+**File:** `02-dashboard.png`  
+**Description:** Datasets list - first page after login, shows Acme Marketing datasets  
+**Capture:** After login as admin@acme.com, show `/datasets` page
 
 ### 3. Dataset Detail with Upload
 **File:** `03-dataset-upload.png`  
@@ -86,14 +92,14 @@ This directory should contain screenshots for the ETL Studio demo walkthrough. U
 Until screenshots are captured, use placeholder images:
 
 - `01-login.png` – [Placeholder: Login form]
-- `02-datasets-list.png` – [Placeholder: Datasets list]
+- `02-dashboard.png` – [Placeholder: Datasets/dashboard list]
 - `03-dataset-upload.png` – [Placeholder: Upload form]
 - `04-mapping.png` – [Placeholder: Mapping page]
 - `05-run-progress.png` – [Placeholder: Progress view]
 - `06-results.png` – [Placeholder: Results table]
 - `07-analytics.png` – [Placeholder: Analytics dashboard]
 - `08-admin-runs.png` – [Placeholder: Admin dashboard]
-- `09-attempts.png` – [Placeholder: Attempts history]
+- `09-compare-runs.png` – [Placeholder: Compare runs page]
 - `10-jaeger.png` – [Placeholder: Jaeger trace view]
 - `11-minio-console.png` – [Placeholder: MinIO bucket view]
 

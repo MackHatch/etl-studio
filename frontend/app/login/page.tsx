@@ -40,6 +40,11 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
       <div className="w-full max-w-sm space-y-6 rounded-lg border border-gray-200 bg-white p-8 shadow-sm">
         <h1 className="text-center text-xl font-semibold">ETL Studio</h1>
+        <p className="text-center">
+          <Link href="/demo" className="text-sm text-blue-600 hover:underline">
+            2-minute demo guide →
+          </Link>
+        </p>
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <p className="text-sm text-red-600" role="alert">

@@ -1,16 +1,15 @@
 """
-Demo seed: create demo dataset and a completed run with sample records and errors.
-Idempotent: checks if demo dataset exists before creating.
-Runs only when SEED_DEMO=true.
+Demo seed: create Acme Marketing org, demo users, datasets, and runs.
+Idempotent: upserts by email (users) and name (org, datasets).
+Runs when SEED_DEMO=true.
 """
 import logging
 from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
-from uuid import UUID
+from uuid import uuid4
 
 from sqlalchemy import select
 
-from app.core.org_context import ensure_personal_org
 from app.core.security import hash_password
 from app.db import async_session_factory
 from app.models.imports import (
@@ -21,165 +20,320 @@ from app.models.imports import (
     ImportRecord,
     ImportRowError,
     ImportRunStatus,
+    DatasetSchemaVersion,
 )
+from app.models.orgs import Organization, OrganizationMember, OrgMemberRole
 from app.models.user import User, UserRole
 
 logger = logging.getLogger(__name__)
 
-DEMO_DATASET_NAME = "Demo: Marketing Spend"
-DEMO_ADMIN_EMAIL = "demo@example.com"
-DEMO_ADMIN_PASSWORD = "demo123"
+# Acme Marketing demo
+ACME_ORG_NAME = "Acme Marketing"
+DEMO_PASSWORD = "DemoPass123!"
+
+DEMO_USERS = [
+    {"email": "admin@acme.com", "name": "Admin", "role": UserRole.ADMIN, "org_role": OrgMemberRole.OWNER},
+    {"email": "analyst@acme.com", "name": "Analyst", "role": UserRole.ADMIN, "org_role": OrgMemberRole.ADMIN},
+    {"email": "member@acme.com", "name": "Member", "role": UserRole.MEMBER, "org_role": OrgMemberRole.MEMBER},
+]
+
+DEFAULT_MAPPING = {
+    "date": {"source": "date", "format": "YYYY-MM-DD"},
+    "campaign": {"source": "campaign"},
+    "channel": {"source": "channel"},
+    "spend": {"source": "spend", "currency": True},
+    "clicks": {"source": "clicks", "default": 0},
+    "conversions": {"source": "conversions", "default": 0},
+}
+
+
+async def _get_or_create_user(session, email: str, name: str, role: UserRole) -> User:
+    result = await session.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if user:
+        return user
+    user = User(
+        email=email,
+        name=name,
+        role=role,
+        password_hash=hash_password(DEMO_PASSWORD),
+    )
+    session.add(user)
+    await session.flush()
+    logger.info("Created demo user: %s", email)
+    return user
+
+
+async def _get_or_create_acme_org(session) -> Organization:
+    result = await session.execute(select(Organization).where(Organization.name == ACME_ORG_NAME))
+    org = result.scalar_one_or_none()
+    if org:
+        return org
+    org = Organization(id=uuid4(), name=ACME_ORG_NAME)
+    session.add(org)
+    await session.flush()
+    logger.info("Created org: %s", ACME_ORG_NAME)
+    return org
+
+
+async def _ensure_member(session, org_id, user_id, role: OrgMemberRole) -> None:
+    result = await session.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.org_id == org_id,
+            OrganizationMember.user_id == user_id,
+        )
+    )
+    if result.scalar_one_or_none():
+        return
+    session.add(
+        OrganizationMember(
+            id=uuid4(),
+            org_id=org_id,
+            user_id=user_id,
+            role=role,
+        )
+    )
+    await session.flush()
+
+
+async def _get_or_create_dataset(
+    session, org_id, created_by_id, name: str, description: str, mapping: dict
+) -> ImportDataset:
+    result = await session.execute(
+        select(ImportDataset).where(
+            ImportDataset.name == name,
+            ImportDataset.org_id == org_id,
+        )
+    )
+    ds = result.scalar_one_or_none()
+    if ds:
+        return ds
+    ds = ImportDataset(
+        name=name,
+        description=description,
+        org_id=org_id,
+        created_by_user_id=created_by_id,
+        mapping_json=mapping,
+    )
+    session.add(ds)
+    await session.flush()
+
+    # Create schema version 1 for mapping
+    schema = DatasetSchemaVersion(
+        dataset_id=ds.id,
+        version=1,
+        mapping_json=mapping,
+        rules_json={},
+        created_by_user_id=created_by_id,
+    )
+    session.add(schema)
+    await session.flush()
+    return ds
 
 
 async def seed_demo() -> None:
-    """Seed demo dataset and run if SEED_DEMO is enabled. Idempotent."""
+    """Seed Acme Marketing org with users, datasets, and runs. Idempotent."""
     async with async_session_factory() as session:
-        # Ensure demo admin exists
-        result = await session.execute(select(User).where(User.email == DEMO_ADMIN_EMAIL))
-        demo_admin = result.scalar_one_or_none()
-        if not demo_admin:
-            demo_admin = User(
-                email=DEMO_ADMIN_EMAIL,
-                name="Demo User",
-                role=UserRole.ADMIN,
-                password_hash=hash_password(DEMO_ADMIN_PASSWORD),
-            )
-            session.add(demo_admin)
-            await session.flush()
-            logger.info("Created demo admin user: %s", DEMO_ADMIN_EMAIL)
-        else:
-            logger.debug("Demo admin already exists: %s", DEMO_ADMIN_EMAIL)
+        # Create or get users
+        admin = await _get_or_create_user(session, "admin@acme.com", "Admin", UserRole.ADMIN)
+        analyst = await _get_or_create_user(session, "analyst@acme.com", "Analyst", UserRole.ADMIN)
+        member = await _get_or_create_user(session, "member@acme.com", "Member", UserRole.MEMBER)
 
-        # Ensure demo admin has personal org
-        await ensure_personal_org(demo_admin, session)
-        await session.refresh(demo_admin)
-        if not demo_admin.active_org_id:
-            raise RuntimeError("Failed to create personal org for demo admin")
+        # Create or get Acme Marketing org
+        acme = await _get_or_create_acme_org(session)
 
-        # Check if demo dataset exists
-        result = await session.execute(
-            select(ImportDataset)
-            .where(ImportDataset.name == DEMO_DATASET_NAME)
-            .where(ImportDataset.org_id == demo_admin.active_org_id)
-        )
-        demo_dataset = result.scalar_one_or_none()
-        if not demo_dataset:
-            demo_dataset = ImportDataset(
-                name=DEMO_DATASET_NAME,
-                description="Sample marketing spend data for demo purposes",
-                org_id=demo_admin.active_org_id,
-                created_by_user_id=demo_admin.id,
-                mapping_json={
-                    "date": {"source": "date", "format": "YYYY-MM-DD"},
-                    "campaign": {"source": "campaign"},
-                    "channel": {"source": "channel"},
-                    "spend": {"source": "spend", "currency": True},
-                    "clicks": {"source": "clicks", "default": 0},
-                    "conversions": {"source": "conversions", "default": 0},
-                },
-            )
-            session.add(demo_dataset)
-            await session.flush()
-            logger.info("Created demo dataset: %s", DEMO_DATASET_NAME)
-        else:
-            logger.debug("Demo dataset already exists: %s", DEMO_DATASET_NAME)
+        # Add members to Acme
+        await _ensure_member(session, acme.id, admin.id, OrgMemberRole.OWNER)
+        await _ensure_member(session, acme.id, analyst.id, OrgMemberRole.ADMIN)
+        await _ensure_member(session, acme.id, member.id, OrgMemberRole.MEMBER)
 
-        # Check if demo run exists
-        result = await session.execute(
-            select(ImportRun)
-            .where(ImportRun.dataset_id == demo_dataset.id)
-            .where(ImportRun.status == ImportRunStatus.SUCCEEDED)
-        )
-        existing_run = result.scalar_one_or_none()
-        if existing_run:
-            logger.debug("Demo run already exists, skipping seed")
-            await session.commit()
-            return
+        # Set active_org to Acme for all demo users (so they see Acme datasets first)
+        for u in (admin, analyst, member):
+            if u.active_org_id != acme.id:
+                u.active_org_id = acme.id
 
-        # Create demo run
-        now = datetime.now(timezone.utc)
-        started = now - timedelta(minutes=5)
-        finished = now - timedelta(minutes=2)
-        demo_run = ImportRun(
-            dataset_id=demo_dataset.id,
-            status=ImportRunStatus.SUCCEEDED,
-            file_path="demo/sample.csv",
-            progress_percent=100,
-            total_rows=5,
-            processed_rows=5,
-            success_rows=3,
-            error_rows=2,
-            started_at=started,
-            finished_at=finished,
-            attempt_count=1,
-            dlq=False,
-        )
-        session.add(demo_run)
         await session.flush()
 
-        # Create attempt
-        attempt = ImportRunAttempt(
-            run_id=demo_run.id,
-            attempt_number=1,
-            status=ImportRunAttemptStatus.SUCCEEDED,
-            started_at=started,
-            finished_at=finished,
+        # Create datasets
+        ds1 = await _get_or_create_dataset(
+            session,
+            acme.id,
+            admin.id,
+            "Q1 Marketing Spend",
+            "Q1 2024 campaign spend across channels",
+            DEFAULT_MAPPING,
         )
-        session.add(attempt)
 
-        # Create sample records (3 valid rows)
-        records = [
-            ImportRecord(
-                run_id=demo_run.id,
-                row_number=1,
-                date=date(2024, 1, 15),
-                campaign="Campaign A",
-                channel="Paid Search",
-                spend=Decimal("150.00"),
-                clicks=320,
-                conversions=12,
-            ),
-            ImportRecord(
-                run_id=demo_run.id,
-                row_number=2,
-                date=date(2024, 1, 15),
-                campaign="Campaign B",
-                channel="Social",
-                spend=Decimal("85.50"),
-                clicks=180,
-                conversions=5,
-            ),
-            ImportRecord(
-                run_id=demo_run.id,
-                row_number=3,
-                date=date(2024, 1, 16),
-                campaign="Campaign A",
-                channel="Paid Search",
-                spend=Decimal("200.00"),
-                clicks=410,
-                conversions=18,
-            ),
-        ]
-        session.add_all(records)
+        ds2 = await _get_or_create_dataset(
+            session,
+            acme.id,
+            analyst.id,
+            "Demo: Marketing Spend",
+            "Sample marketing spend for demo purposes",
+            DEFAULT_MAPPING,
+        )
 
-        # Create sample errors (2 invalid rows)
-        errors = [
-            ImportRowError(
-                run_id=demo_run.id,
-                row_number=4,
-                field="date",
-                message="Invalid date: 2024-13-45",
-                raw_row={"date": "2024-13-45", "campaign": "Campaign C", "channel": "Email", "spend": "50.00"},
-            ),
-            ImportRowError(
-                run_id=demo_run.id,
-                row_number=5,
-                field="spend",
-                message="Invalid number for spend: 'abc'",
-                raw_row={"date": "2024-01-17", "campaign": "Campaign D", "channel": "Display", "spend": "abc"},
-            ),
+        now = datetime.now(timezone.utc)
+
+        # Dataset 1: Multiple runs in mixed statuses (idempotent: check count)
+        ds1_run_count = (
+            await session.execute(select(ImportRun).where(ImportRun.dataset_id == ds1.id))
+        )
+        ds1_runs = list(ds1_run_count.scalars().all())
+        ds1_statuses = {r.status for r in ds1_runs}
+
+        ds1_runs_to_create = [
+            (ImportRunStatus.SUCCEEDED, 12, 2, now - timedelta(days=5), now - timedelta(days=5)),
+            (ImportRunStatus.SUCCEEDED, 8, 0, now - timedelta(days=3), now - timedelta(days=3)),
+            (ImportRunStatus.SUCCEEDED, 15, 1, now - timedelta(days=1), now - timedelta(days=1)),
+            (ImportRunStatus.DRAFT, 0, 0, None, None),
         ]
-        session.add_all(errors)
+        for status, success_rows, error_rows, started, finished in ds1_runs_to_create:
+            # Idempotent: skip if we already have a run with this profile
+            existing = next(
+                (r for r in ds1_runs if r.status == status and r.success_rows == success_rows),
+                None,
+            )
+            if existing:
+                continue
+
+            run = ImportRun(
+                dataset_id=ds1.id,
+                status=status,
+                file_path="demo/sample.csv" if status == ImportRunStatus.SUCCEEDED else None,
+                progress_percent=100 if status == ImportRunStatus.SUCCEEDED else 0,
+                total_rows=success_rows + error_rows if status == ImportRunStatus.SUCCEEDED else None,
+                processed_rows=success_rows + error_rows if status == ImportRunStatus.SUCCEEDED else 0,
+                success_rows=success_rows,
+                error_rows=error_rows,
+                started_at=started,
+                finished_at=finished,
+                attempt_count=1,
+                dlq=False,
+                schema_version=1,
+            )
+            session.add(run)
+            await session.flush()
+
+            if status == ImportRunStatus.SUCCEEDED:
+                attempt = ImportRunAttempt(
+                    run_id=run.id,
+                    attempt_number=1,
+                    status=ImportRunAttemptStatus.SUCCEEDED,
+                    started_at=started,
+                    finished_at=finished,
+                )
+                session.add(attempt)
+
+                # Add sample records for first succeeded run
+                if success_rows >= 3:
+                    for i, (d, camp, ch, sp, cl, cv) in enumerate(
+                        [
+                            (date(2024, 1, 15), "Campaign A", "Paid Search", Decimal("150.00"), 320, 12),
+                            (date(2024, 1, 15), "Campaign B", "Social", Decimal("85.50"), 180, 5),
+                            (date(2024, 1, 16), "Campaign A", "Paid Search", Decimal("200.00"), 410, 18),
+                        ],
+                        start=1,
+                    ):
+                        session.add(
+                            ImportRecord(
+                                run_id=run.id,
+                                row_number=i,
+                                date=d,
+                                campaign=camp,
+                                channel=ch,
+                                spend=sp,
+                                clicks=cl,
+                                conversions=cv,
+                            )
+                        )
+                    if error_rows > 0:
+                        session.add(
+                            ImportRowError(
+                                run_id=run.id,
+                                row_number=4,
+                                field="date",
+                                message="Invalid date: 2024-13-45",
+                                raw_row={"date": "2024-13-45", "campaign": "C", "channel": "Email", "spend": "50"},
+                            )
+                        )
+
+        # Dataset 2: Demo dataset with one completed run (legacy demo compatibility)
+        result = await session.execute(
+            select(ImportRun).where(
+                ImportRun.dataset_id == ds2.id,
+                ImportRun.status == ImportRunStatus.SUCCEEDED,
+            )
+        )
+        if not result.scalar_one_or_none():
+            started = now - timedelta(minutes=5)
+            finished = now - timedelta(minutes=2)
+            run = ImportRun(
+                dataset_id=ds2.id,
+                status=ImportRunStatus.SUCCEEDED,
+                file_path="demo/sample.csv",
+                progress_percent=100,
+                total_rows=5,
+                processed_rows=5,
+                success_rows=3,
+                error_rows=2,
+                started_at=started,
+                finished_at=finished,
+                attempt_count=1,
+                dlq=False,
+                schema_version=1,
+            )
+            session.add(run)
+            await session.flush()
+
+            attempt = ImportRunAttempt(
+                run_id=run.id,
+                attempt_number=1,
+                status=ImportRunAttemptStatus.SUCCEEDED,
+                started_at=started,
+                finished_at=finished,
+            )
+            session.add(attempt)
+
+            for i, (d, camp, ch, sp, cl, cv) in enumerate(
+                [
+                    (date(2024, 1, 15), "Campaign A", "Paid Search", Decimal("150.00"), 320, 12),
+                    (date(2024, 1, 15), "Campaign B", "Social", Decimal("85.50"), 180, 5),
+                    (date(2024, 1, 16), "Campaign A", "Paid Search", Decimal("200.00"), 410, 18),
+                ],
+                start=1,
+            ):
+                session.add(
+                    ImportRecord(
+                        run_id=run.id,
+                        row_number=i,
+                        date=d,
+                        campaign=camp,
+                        channel=ch,
+                        spend=sp,
+                        clicks=cl,
+                        conversions=cv,
+                    )
+                )
+
+            session.add_all(
+                [
+                    ImportRowError(
+                        run_id=run.id,
+                        row_number=4,
+                        field="date",
+                        message="Invalid date: 2024-13-45",
+                        raw_row={"date": "2024-13-45", "campaign": "C", "channel": "Email", "spend": "50.00"},
+                    ),
+                    ImportRowError(
+                        run_id=run.id,
+                        row_number=5,
+                        field="spend",
+                        message="Invalid number for spend: 'abc'",
+                        raw_row={"date": "2024-01-17", "campaign": "D", "channel": "Display", "spend": "abc"},
+                    ),
+                ]
+            )
 
         await session.commit()
-        logger.info("Demo seed completed: dataset=%s, run=%s", demo_dataset.id, demo_run.id)
+        logger.info("Demo seed completed: Acme Marketing org with datasets and runs")

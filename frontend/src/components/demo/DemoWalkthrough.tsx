@@ -1,11 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { baseURL } from "@/lib/api";
 
-const DEMO_EMAIL = "demo@example.com";
-const DEMO_PASSWORD = "demo123";
+const DEMO_EMAIL = "admin@acme.com";
+const DEMO_PASSWORD = "DemoPass123!";
 
 export function DemoWalkthrough() {
   const [dismissed, setDismissed] = useState(false);
@@ -65,7 +66,7 @@ export function DemoWalkthrough() {
           <h2 className="text-lg font-semibold text-blue-900">Demo Walkthrough</h2>
           <p className="mt-1 text-sm text-blue-700">
             Quick guide to explore ETL Studio. Demo credentials: <strong>{DEMO_EMAIL}</strong> /{" "}
-            <strong>{DEMO_PASSWORD}</strong>
+            <strong>{DEMO_PASSWORD}</strong>. <Link href="/demo" className="underline">Full 2-min guide →</Link>
           </p>
         </div>
         <button
