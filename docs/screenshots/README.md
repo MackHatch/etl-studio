@@ -1,83 +1,42 @@
 # Screenshots Guide
 
-This directory should contain screenshots for the ETL Studio demo walkthrough. Use these placeholders and capture instructions.
+This directory should contain screenshots for the ETL Studio demo walkthrough.
 
 ## Browser & Size
 
 - **Browser:** Chrome or Edge
 - **Window size:** 1920×1080 (or full-screen)
-- **Data:** Run `make demo` for seeded Acme Marketing org and datasets
+- **Data:** Run `make demo` for seeded Demo Workspace (demo@etl.com)
 
-## Checklist
+## Checklist (per prompt)
 
-- [ ] 01-login.png
-- [ ] 02-dashboard.png (datasets list - first page after login)
-- [ ] 03-dataset-upload.png
-- [ ] 04-mapping.png
-- [ ] 05-run-progress.png
-- [ ] 06-results.png
-- [ ] 07-analytics.png
-- [ ] 08-admin-runs.png
-- [ ] 09-compare-runs.png
-- [ ] 10-jaeger.png
-- [ ] 11-minio-console.png (S3 storage)
+- [ ] uploads.png — dataset page + upload area
+- [ ] run-progress-sse.png — run detail with SSE progress
+- [ ] results-table.png — results page with records table
+- [ ] schema-rules.png — schema / rules editor
+- [ ] compare-runs.png — compare Run A vs Run B
 
 ## Required Screenshots
 
-### 1. Login Page
-**File:** `01-login.png`  
-**Description:** Login form with email/password fields  
-**Capture:** Navigate to `/login`, show the form
+### uploads.png
+**Description:** Dataset page with upload CSV area  
+**Capture:** After login as demo@etl.com, click "Demo: Marketing Spend", show upload section
 
-### 2. Dashboard (Datasets List)
-**File:** `02-dashboard.png`  
-**Description:** Datasets list - first page after login, shows Acme Marketing datasets  
-**Capture:** After login as admin@acme.com, show `/datasets` page
+### run-progress-sse.png
+**Description:** Run detail page with live SSE progress bar and stats  
+**Capture:** Navigate to `/runs/:id` for a run, show progress (or completed run)
 
-### 3. Dataset Detail with Upload
-**File:** `03-dataset-upload.png`  
-**Description:** Dataset detail page showing upload form  
-**Capture:** Click a dataset, show upload CSV section
-
-### 4. Mapping Configuration
-**File:** `04-mapping.png`  
-**Description:** Column mapping page with dropdowns for canonical fields  
-**Capture:** After upload, show `/runs/:id/mapping` with column selects
-
-### 5. Run Progress (SSE)
-**File:** `05-run-progress.png`  
-**Description:** Run detail page showing live progress bar and stats  
-**Capture:** After starting run, show `/runs/:id` with progress updating
-
-### 6. Results Table
-**File:** `06-results.png`  
-**Description:** Results page showing imported records table  
+### results-table.png
+**Description:** Results page with imported records table and export buttons  
 **Capture:** Navigate to `/runs/:id/results`, show table with records
 
-### 7. Analytics Dashboard
-**File:** `07-analytics.png`  
-**Description:** Analytics page with charts (by day, by channel) and KPIs  
-**Capture:** Navigate to `/analytics`, select dataset, show charts
+### schema-rules.png
+**Description:** Schema version and rules editor  
+**Capture:** Navigate to `/datasets/:id/schema`, show rules (e.g. spend min)
 
-### 8. Admin Runs Dashboard
-**File:** `08-admin-runs.png`  
-**Description:** Admin runs list with filters and live updates  
-**Capture:** As admin user, navigate to `/admin/runs`, show table
-
-### 9. Run Attempts History
-**File:** `09-attempts.png`  
-**Description:** Run detail showing attempt history with retries  
-**Capture:** Show a failed/retried run with attempts panel
-
-### 10. Jaeger Tracing (if enabled)
-**File:** `10-jaeger.png`  
-**Description:** Jaeger UI showing trace spans for upload → worker → SSE  
-**Capture:** With tracing enabled, show Jaeger UI with trace timeline
-
-### 11. MinIO Console (S3 storage)
-**File:** `11-minio-console.png`  
-**Description:** MinIO console showing etl-uploads bucket  
-**Capture:** http://localhost:9001, login with MINIO_ROOT_USER/MINIO_ROOT_PASSWORD
+### compare-runs.png
+**Description:** Compare Run A vs Run B with KPI deltas  
+**Capture:** Navigate to `/datasets/:id/compare` with leftRunId and rightRunId, show diff cards
 
 ## Capture Instructions
 
@@ -89,28 +48,20 @@ This directory should contain screenshots for the ETL Studio demo walkthrough. U
 
 ## Placeholder Images
 
-Until screenshots are captured, use placeholder images:
+Until screenshots are captured:
 
-- `01-login.png` – [Placeholder: Login form]
-- `02-dashboard.png` – [Placeholder: Datasets/dashboard list]
-- `03-dataset-upload.png` – [Placeholder: Upload form]
-- `04-mapping.png` – [Placeholder: Mapping page]
-- `05-run-progress.png` – [Placeholder: Progress view]
-- `06-results.png` – [Placeholder: Results table]
-- `07-analytics.png` – [Placeholder: Analytics dashboard]
-- `08-admin-runs.png` – [Placeholder: Admin dashboard]
-- `09-compare-runs.png` – [Placeholder: Compare runs page]
-- `10-jaeger.png` – [Placeholder: Jaeger trace view]
-- `11-minio-console.png` – [Placeholder: MinIO bucket view]
+- `uploads.png` – Dataset + upload area
+- `run-progress-sse.png` – Run progress with SSE
+- `results-table.png` – Results table
+- `schema-rules.png` – Schema rules editor
+- `compare-runs.png` – Compare runs diff cards
 
 ## Usage in README
 
-Add screenshots to the main README.md:
-
 ```markdown
-## Screenshots
-
-![Login](docs/screenshots/01-login.png)
-![Datasets](docs/screenshots/02-datasets-list.png)
-...
+![Uploads](docs/screenshots/uploads.png)
+![Run progress](docs/screenshots/run-progress-sse.png)
+![Results](docs/screenshots/results-table.png)
+![Schema rules](docs/screenshots/schema-rules.png)
+![Compare runs](docs/screenshots/compare-runs.png)
 ```

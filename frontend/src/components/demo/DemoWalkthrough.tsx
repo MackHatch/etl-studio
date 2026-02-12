@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { baseURL } from "@/lib/api";
 
-const DEMO_EMAIL = "admin@acme.com";
+const DEMO_EMAIL = "demo@etl.com";
 const DEMO_PASSWORD = "DemoPass123!";
 
 export function DemoWalkthrough() {

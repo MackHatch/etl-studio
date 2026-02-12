@@ -1,5 +1,5 @@
 """
-Demo seed: create Acme Marketing org, demo users, datasets, and runs.
+Demo seed: create Demo Workspace org, demo user, dataset, schema v1/v2, Run A (clean) and Run B (with errors).
 Idempotent: upserts by email (users) and name (org, datasets).
 Runs when SEED_DEMO=true.
 """
@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from sqlalchemy import select
 
+from app.core.org_context import ensure_personal_org
 from app.core.security import hash_password
 from app.db import async_session_factory
 from app.models.imports import (
@@ -27,17 +28,13 @@ from app.models.user import User, UserRole
 
 logger = logging.getLogger(__name__)
 
-# Acme Marketing demo
-ACME_ORG_NAME = "Acme Marketing"
+ORG_NAME = "Demo Workspace"
+DATASET_NAME = "Demo: Marketing Spend"
+DEMO_EMAIL = "demo@etl.com"
 DEMO_PASSWORD = "DemoPass123!"
 
-DEMO_USERS = [
-    {"email": "admin@acme.com", "name": "Admin", "role": UserRole.ADMIN, "org_role": OrgMemberRole.OWNER},
-    {"email": "analyst@acme.com", "name": "Analyst", "role": UserRole.ADMIN, "org_role": OrgMemberRole.ADMIN},
-    {"email": "member@acme.com", "name": "Member", "role": UserRole.MEMBER, "org_role": OrgMemberRole.MEMBER},
-]
-
-DEFAULT_MAPPING = {
+# Schema v1: baseline rules (empty = no extra validation)
+MAPPING_V1 = {
     "date": {"source": "date", "format": "YYYY-MM-DD"},
     "campaign": {"source": "campaign"},
     "channel": {"source": "channel"},
@@ -45,232 +42,205 @@ DEFAULT_MAPPING = {
     "clicks": {"source": "clicks", "default": 0},
     "conversions": {"source": "conversions", "default": 0},
 }
+RULES_V1 = {}
 
-
-async def _get_or_create_user(session, email: str, name: str, role: UserRole) -> User:
-    result = await session.execute(select(User).where(User.email == email))
-    user = result.scalar_one_or_none()
-    if user:
-        return user
-    user = User(
-        email=email,
-        name=name,
-        role=role,
-        password_hash=hash_password(DEMO_PASSWORD),
-    )
-    session.add(user)
-    await session.flush()
-    logger.info("Created demo user: %s", email)
-    return user
-
-
-async def _get_or_create_acme_org(session) -> Organization:
-    result = await session.execute(select(Organization).where(Organization.name == ACME_ORG_NAME))
-    org = result.scalar_one_or_none()
-    if org:
-        return org
-    org = Organization(id=uuid4(), name=ACME_ORG_NAME)
-    session.add(org)
-    await session.flush()
-    logger.info("Created org: %s", ACME_ORG_NAME)
-    return org
-
-
-async def _ensure_member(session, org_id, user_id, role: OrgMemberRole) -> None:
-    result = await session.execute(
-        select(OrganizationMember).where(
-            OrganizationMember.org_id == org_id,
-            OrganizationMember.user_id == user_id,
-        )
-    )
-    if result.scalar_one_or_none():
-        return
-    session.add(
-        OrganizationMember(
-            id=uuid4(),
-            org_id=org_id,
-            user_id=user_id,
-            role=role,
-        )
-    )
-    await session.flush()
-
-
-async def _get_or_create_dataset(
-    session, org_id, created_by_id, name: str, description: str, mapping: dict
-) -> ImportDataset:
-    result = await session.execute(
-        select(ImportDataset).where(
-            ImportDataset.name == name,
-            ImportDataset.org_id == org_id,
-        )
-    )
-    ds = result.scalar_one_or_none()
-    if ds:
-        return ds
-    ds = ImportDataset(
-        name=name,
-        description=description,
-        org_id=org_id,
-        created_by_user_id=created_by_id,
-        mapping_json=mapping,
-    )
-    session.add(ds)
-    await session.flush()
-
-    # Create schema version 1 for mapping
-    schema = DatasetSchemaVersion(
-        dataset_id=ds.id,
-        version=1,
-        mapping_json=mapping,
-        rules_json={},
-        created_by_user_id=created_by_id,
-    )
-    session.add(schema)
-    await session.flush()
-    return ds
+# Schema v2: spend min 100 - causes rows with spend < 100 to fail
+RULES_V2 = {"spend": {"min": 100}}
 
 
 async def seed_demo() -> None:
-    """Seed Acme Marketing org with users, datasets, and runs. Idempotent."""
+    """Seed Demo Workspace with demo user, dataset, schema v1/v2, Run A (clean), Run B (errors). Idempotent."""
     async with async_session_factory() as session:
-        # Create or get users
-        admin = await _get_or_create_user(session, "admin@acme.com", "Admin", UserRole.ADMIN)
-        analyst = await _get_or_create_user(session, "analyst@acme.com", "Analyst", UserRole.ADMIN)
-        member = await _get_or_create_user(session, "member@acme.com", "Member", UserRole.MEMBER)
+        # Ensure demo user exists (bootstrap may have created)
+        result = await session.execute(select(User).where(User.email == DEMO_EMAIL))
+        demo_user = result.scalar_one_or_none()
+        if not demo_user:
+            demo_user = User(
+                email=DEMO_EMAIL,
+                name="Demo User",
+                role=UserRole.ADMIN,
+                password_hash=hash_password(DEMO_PASSWORD),
+            )
+            session.add(demo_user)
+            await session.flush()
+            logger.info("Created demo user: %s", DEMO_EMAIL)
+        await ensure_personal_org(demo_user, session)
+        await session.refresh(demo_user)
 
-        # Create or get Acme Marketing org
-        acme = await _get_or_create_acme_org(session)
-
-        # Add members to Acme
-        await _ensure_member(session, acme.id, admin.id, OrgMemberRole.OWNER)
-        await _ensure_member(session, acme.id, analyst.id, OrgMemberRole.ADMIN)
-        await _ensure_member(session, acme.id, member.id, OrgMemberRole.MEMBER)
-
-        # Set active_org to Acme for all demo users (so they see Acme datasets first)
-        for u in (admin, analyst, member):
-            if u.active_org_id != acme.id:
-                u.active_org_id = acme.id
+        # Create or get "Demo Workspace" org
+        result = await session.execute(select(Organization).where(Organization.name == ORG_NAME))
+        org = result.scalar_one_or_none()
+        if not org:
+            org = Organization(id=uuid4(), name=ORG_NAME)
+            session.add(org)
+            await session.flush()
+            logger.info("Created org: %s", ORG_NAME)
+        # Ensure demo user is member (idempotent)
+        member_result = await session.execute(
+            select(OrganizationMember).where(
+                OrganizationMember.org_id == org.id,
+                OrganizationMember.user_id == demo_user.id,
+            )
+        )
+        if not member_result.scalar_one_or_none():
+            session.add(
+                OrganizationMember(
+                    id=uuid4(),
+                    org_id=org.id,
+                    user_id=demo_user.id,
+                    role=OrgMemberRole.OWNER,
+                )
+            )
+            await session.flush()
+        demo_user.active_org_id = org.id
 
         await session.flush()
 
-        # Create datasets
-        ds1 = await _get_or_create_dataset(
-            session,
-            acme.id,
-            admin.id,
-            "Q1 Marketing Spend",
-            "Q1 2024 campaign spend across channels",
-            DEFAULT_MAPPING,
+        # Create dataset
+        result = await session.execute(
+            select(ImportDataset).where(
+                ImportDataset.name == DATASET_NAME,
+                ImportDataset.org_id == org.id,
+            )
         )
+        dataset = result.scalar_one_or_none()
+        if not dataset:
+            dataset = ImportDataset(
+                name=DATASET_NAME,
+                description="Sample marketing spend for 2-minute demo",
+                org_id=org.id,
+                created_by_user_id=demo_user.id,
+                mapping_json=MAPPING_V1,
+            )
+            session.add(dataset)
+            await session.flush()
+            logger.info("Created dataset: %s", DATASET_NAME)
+        else:
+            dataset.mapping_json = MAPPING_V1
+            dataset.active_schema_version = 2
+            await session.flush()
 
-        ds2 = await _get_or_create_dataset(
-            session,
-            acme.id,
-            analyst.id,
-            "Demo: Marketing Spend",
-            "Sample marketing spend for demo purposes",
-            DEFAULT_MAPPING,
+        # Schema v1
+        result = await session.execute(
+            select(DatasetSchemaVersion).where(
+                DatasetSchemaVersion.dataset_id == dataset.id,
+                DatasetSchemaVersion.version == 1,
+            )
         )
+        if not result.scalar_one_or_none():
+            session.add(
+                DatasetSchemaVersion(
+                    dataset_id=dataset.id,
+                    version=1,
+                    mapping_json=MAPPING_V1,
+                    rules_json=RULES_V1,
+                    created_by_user_id=demo_user.id,
+                )
+            )
+            await session.flush()
+
+        # Schema v2 (slightly different rules)
+        result = await session.execute(
+            select(DatasetSchemaVersion).where(
+                DatasetSchemaVersion.dataset_id == dataset.id,
+                DatasetSchemaVersion.version == 2,
+            )
+        )
+        if not result.scalar_one_or_none():
+            session.add(
+                DatasetSchemaVersion(
+                    dataset_id=dataset.id,
+                    version=2,
+                    mapping_json=MAPPING_V1,
+                    rules_json=RULES_V2,
+                    created_by_user_id=demo_user.id,
+                )
+            )
+            await session.flush()
+        dataset.active_schema_version = 2
+        await session.flush()
 
         now = datetime.now(timezone.utc)
 
-        # Dataset 1: Multiple runs in mixed statuses (idempotent: check count)
-        ds1_run_count = (
-            await session.execute(select(ImportRun).where(ImportRun.dataset_id == ds1.id))
-        )
-        ds1_runs = list(ds1_run_count.scalars().all())
-        ds1_statuses = {r.status for r in ds1_runs}
-
-        ds1_runs_to_create = [
-            (ImportRunStatus.SUCCEEDED, 12, 2, now - timedelta(days=5), now - timedelta(days=5)),
-            (ImportRunStatus.SUCCEEDED, 8, 0, now - timedelta(days=3), now - timedelta(days=3)),
-            (ImportRunStatus.SUCCEEDED, 15, 1, now - timedelta(days=1), now - timedelta(days=1)),
-            (ImportRunStatus.DRAFT, 0, 0, None, None),
-        ]
-        for status, success_rows, error_rows, started, finished in ds1_runs_to_create:
-            # Idempotent: skip if we already have a run with this profile
-            existing = next(
-                (r for r in ds1_runs if r.status == status and r.success_rows == success_rows),
-                None,
+        # Run A: SUCCEEDED, schema v1, all records clean (meaningful totals for compare)
+        run_a_result = await session.execute(
+            select(ImportRun).where(
+                ImportRun.dataset_id == dataset.id,
+                ImportRun.schema_version == 1,
+                ImportRun.status == ImportRunStatus.SUCCEEDED,
             )
-            if existing:
-                continue
-
-            run = ImportRun(
-                dataset_id=ds1.id,
-                status=status,
-                file_path="demo/sample.csv" if status == ImportRunStatus.SUCCEEDED else None,
-                progress_percent=100 if status == ImportRunStatus.SUCCEEDED else 0,
-                total_rows=success_rows + error_rows if status == ImportRunStatus.SUCCEEDED else None,
-                processed_rows=success_rows + error_rows if status == ImportRunStatus.SUCCEEDED else 0,
-                success_rows=success_rows,
-                error_rows=error_rows,
+        )
+        run_a = run_a_result.scalar_one_or_none()
+        if not run_a:
+            started = now - timedelta(hours=2)
+            finished = now - timedelta(hours=2) + timedelta(seconds=30)
+            run_a = ImportRun(
+                dataset_id=dataset.id,
+                status=ImportRunStatus.SUCCEEDED,
+                schema_version=1,
+                file_path="demo/sample.csv",
+                progress_percent=100,
+                total_rows=5,
+                processed_rows=5,
+                success_rows=5,
+                error_rows=0,
                 started_at=started,
                 finished_at=finished,
                 attempt_count=1,
                 dlq=False,
-                schema_version=1,
             )
-            session.add(run)
+            session.add(run_a)
             await session.flush()
-
-            if status == ImportRunStatus.SUCCEEDED:
-                attempt = ImportRunAttempt(
-                    run_id=run.id,
+            session.add(
+                ImportRunAttempt(
+                    run_id=run_a.id,
                     attempt_number=1,
                     status=ImportRunAttemptStatus.SUCCEEDED,
                     started_at=started,
                     finished_at=finished,
                 )
-                session.add(attempt)
+            )
+            # 5 records: totals for compare (spend: 150+85+200+60+100 = 595)
+            for i, (d, camp, ch, sp, cl, cv) in enumerate(
+                [
+                    (date(2024, 1, 15), "Campaign A", "Paid Search", Decimal("150.00"), 320, 12),
+                    (date(2024, 1, 15), "Campaign B", "Social", Decimal("85.50"), 180, 5),
+                    (date(2024, 1, 16), "Campaign A", "Paid Search", Decimal("200.00"), 410, 18),
+                    (date(2024, 1, 16), "Campaign C", "Email", Decimal("60.00"), 90, 3),
+                    (date(2024, 1, 17), "Campaign B", "Display", Decimal("100.00"), 150, 7),
+                ],
+                start=1,
+            ):
+                session.add(
+                    ImportRecord(
+                        run_id=run_a.id,
+                        row_number=i,
+                        date=d,
+                        campaign=camp,
+                        channel=ch,
+                        spend=sp,
+                        clicks=cl,
+                        conversions=cv,
+                    )
+                )
+            await session.flush()
 
-                # Add sample records for first succeeded run
-                if success_rows >= 3:
-                    for i, (d, camp, ch, sp, cl, cv) in enumerate(
-                        [
-                            (date(2024, 1, 15), "Campaign A", "Paid Search", Decimal("150.00"), 320, 12),
-                            (date(2024, 1, 15), "Campaign B", "Social", Decimal("85.50"), 180, 5),
-                            (date(2024, 1, 16), "Campaign A", "Paid Search", Decimal("200.00"), 410, 18),
-                        ],
-                        start=1,
-                    ):
-                        session.add(
-                            ImportRecord(
-                                run_id=run.id,
-                                row_number=i,
-                                date=d,
-                                campaign=camp,
-                                channel=ch,
-                                spend=sp,
-                                clicks=cl,
-                                conversions=cv,
-                            )
-                        )
-                    if error_rows > 0:
-                        session.add(
-                            ImportRowError(
-                                run_id=run.id,
-                                row_number=4,
-                                field="date",
-                                message="Invalid date: 2024-13-45",
-                                raw_row={"date": "2024-13-45", "campaign": "C", "channel": "Email", "spend": "50"},
-                            )
-                        )
-
-        # Dataset 2: Demo dataset with one completed run (legacy demo compatibility)
-        result = await session.execute(
+        # Run B: SUCCEEDED, schema v2, has row errors (spend<50 rejected)
+        run_b_result = await session.execute(
             select(ImportRun).where(
-                ImportRun.dataset_id == ds2.id,
+                ImportRun.dataset_id == dataset.id,
+                ImportRun.schema_version == 2,
                 ImportRun.status == ImportRunStatus.SUCCEEDED,
             )
         )
-        if not result.scalar_one_or_none():
-            started = now - timedelta(minutes=5)
-            finished = now - timedelta(minutes=2)
-            run = ImportRun(
-                dataset_id=ds2.id,
+        run_b = run_b_result.scalar_one_or_none()
+        if not run_b:
+            started = now - timedelta(hours=1)
+            finished = now - timedelta(hours=1) + timedelta(seconds=25)
+            run_b = ImportRun(
+                dataset_id=dataset.id,
                 status=ImportRunStatus.SUCCEEDED,
+                schema_version=2,
                 file_path="demo/sample.csv",
                 progress_percent=100,
                 total_rows=5,
@@ -281,31 +251,33 @@ async def seed_demo() -> None:
                 finished_at=finished,
                 attempt_count=1,
                 dlq=False,
-                schema_version=1,
             )
-            session.add(run)
+            session.add(run_b)
             await session.flush()
-
-            attempt = ImportRunAttempt(
-                run_id=run.id,
-                attempt_number=1,
-                status=ImportRunAttemptStatus.SUCCEEDED,
-                started_at=started,
-                finished_at=finished,
+            session.add(
+                ImportRunAttempt(
+                    run_id=run_b.id,
+                    attempt_number=1,
+                    status=ImportRunAttemptStatus.SUCCEEDED,
+                    started_at=started,
+                    finished_at=finished,
+                )
             )
-            session.add(attempt)
-
+            # 3 valid (spend>=50), 2 rejected by rules (Campaign C spend 60 is valid, but we'll reject lower)
+            # Run B: only 3 records with spend >= 50: 150, 85, 200 (Campaign C 60, Campaign B 100 - 100 is valid)
+            # Actually RULES_V2 says spend min 50. So 60 and 100 both pass. Let me use min 100 to get 2 errors.
+            # Records that pass (spend >= 100)
             for i, (d, camp, ch, sp, cl, cv) in enumerate(
                 [
                     (date(2024, 1, 15), "Campaign A", "Paid Search", Decimal("150.00"), 320, 12),
-                    (date(2024, 1, 15), "Campaign B", "Social", Decimal("85.50"), 180, 5),
                     (date(2024, 1, 16), "Campaign A", "Paid Search", Decimal("200.00"), 410, 18),
+                    (date(2024, 1, 17), "Campaign B", "Display", Decimal("100.00"), 150, 7),
                 ],
                 start=1,
             ):
                 session.add(
                     ImportRecord(
-                        run_id=run.id,
+                        run_id=run_b.id,
                         row_number=i,
                         date=d,
                         campaign=camp,
@@ -315,25 +287,25 @@ async def seed_demo() -> None:
                         conversions=cv,
                     )
                 )
-
             session.add_all(
                 [
                     ImportRowError(
-                        run_id=run.id,
-                        row_number=4,
-                        field="date",
-                        message="Invalid date: 2024-13-45",
-                        raw_row={"date": "2024-13-45", "campaign": "C", "channel": "Email", "spend": "50.00"},
+                        run_id=run_b.id,
+                        row_number=2,
+                        field="spend",
+                        message="spend must be >= 100",
+                        raw_row={"date": "2024-01-15", "campaign": "Campaign B", "channel": "Social", "spend": "85.50"},
                     ),
                     ImportRowError(
-                        run_id=run.id,
-                        row_number=5,
+                        run_id=run_b.id,
+                        row_number=4,
                         field="spend",
-                        message="Invalid number for spend: 'abc'",
-                        raw_row={"date": "2024-01-17", "campaign": "D", "channel": "Display", "spend": "abc"},
+                        message="spend must be >= 100",
+                        raw_row={"date": "2024-01-16", "campaign": "Campaign C", "channel": "Email", "spend": "60.00"},
                     ),
                 ]
             )
+            await session.flush()
 
         await session.commit()
-        logger.info("Demo seed completed: Acme Marketing org with datasets and runs")
+        logger.info("Demo seed completed: %s, Run A=%s, Run B=%s", DATASET_NAME, run_a.id if run_a else "n/a", run_b.id if run_b else "n/a")

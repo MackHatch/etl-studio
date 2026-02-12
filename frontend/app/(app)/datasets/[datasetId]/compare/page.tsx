@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
@@ -25,9 +25,12 @@ type DatasetWithRuns = {
 
 export default function CompareRunsPage() {
   const params = useParams();
-  const router = useRouter();
+  const searchParams = useSearchParams();
   const datasetId = params.datasetId as string;
   const { token } = useAuth();
+
+  const urlLeft = searchParams.get("leftRunId");
+  const urlRight = searchParams.get("rightRunId");
 
   const { data: dataset } = useQuery({
     queryKey: ["dataset", datasetId],
@@ -38,12 +41,17 @@ export default function CompareRunsPage() {
 
   const succeededRuns = dataset?.runs.filter((r) => r.status === "SUCCEEDED") ?? [];
   
-  // Default to last two succeeded runs
+  // Default: URL params > last two succeeded runs
   const defaultLeft = succeededRuns.length >= 2 ? succeededRuns[succeededRuns.length - 2]?.id : null;
   const defaultRight = succeededRuns.length >= 1 ? succeededRuns[succeededRuns.length - 1]?.id : null;
   
-  const [leftRunId, setLeftRunId] = useState<string | null>(defaultLeft);
-  const [rightRunId, setRightRunId] = useState<string | null>(defaultRight);
+  const [leftRunId, setLeftRunId] = useState<string | null>(urlLeft || defaultLeft);
+  const [rightRunId, setRightRunId] = useState<string | null>(urlRight || defaultRight);
+
+  useEffect(() => {
+    if (urlLeft && dataset?.runs.some((r) => r.id === urlLeft)) setLeftRunId(urlLeft);
+    if (urlRight && dataset?.runs.some((r) => r.id === urlRight)) setRightRunId(urlRight);
+  }, [dataset?.runs, urlLeft, urlRight]);
 
   const { data: compareData, isLoading, error } = useCompareRuns(
     datasetId,

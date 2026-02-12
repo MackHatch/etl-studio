@@ -10,19 +10,18 @@ A production-ready ETL pipeline for importing and analyzing marketing data. Uplo
 make demo
 ```
 
-This resets the database, seeds **Acme Marketing** (org + 3 users, datasets, runs), and starts the full stack. You'll see:
+This starts postgres, redis, minio, flower, jaeger; runs migrations; seeds **Demo Workspace** (org + demo user + dataset + 2 runs); and starts backend, worker, frontend. You'll see:
 
 - **App:** http://localhost:3000  
-- **Demo login:** `admin@acme.com` / `DemoPass123!`  
-- **In-app guide:** http://localhost:3000/demo  
+- **Demo page:** http://localhost:3000/demo  
+- **API docs:** http://localhost:8000/docs  
+- **Flower:** http://localhost:5555  
+- **MinIO:** http://localhost:9001  
+- **Jaeger:** http://localhost:16686  
 
-The `/demo` page has a step-by-step walkthrough with links to each screen (Login → Create dataset → Upload → Mapping → Results → Analytics).
+**Login:** `demo@etl.com` / `DemoPass123!`  
 
-| User              | Password     | Role   |
-|-------------------|--------------|--------|
-| admin@acme.com    | DemoPass123! | ADMIN  |
-| analyst@acme.com  | DemoPass123! | ADMIN  |
-| member@acme.com   | DemoPass123! | MEMBER |
+The `/demo` page has upload shortcut, deep links to Run A/B, compare (preselected), Copy curl buttons, and external links (Flower, Jaeger, MinIO).
 
 ## Features
 

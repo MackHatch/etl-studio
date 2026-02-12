@@ -1,41 +1,37 @@
 # Demo GIF Recording Guide
 
-Instructions for recording a 10–15 second GIF of the ETL Studio 2-minute demo flow.
+Record a 10–15 second GIF of the ETL Studio flow: **upload → start → progress → results**.
 
 ## Prerequisites
 
-1. Run `make demo` (or have the app running with seeded data)
-2. Screen recorder (e.g. [ScreenToGif](https://www.screentogif.com/), [LICEcap](https://www.cockos.com/licecap/), or built-in OS recording)
+1. Run `make demo` (or have app running with seeded data)
+2. Screen recorder (e.g. [ScreenToGif](https://www.screentogif.com/), [LICEcap](https://www.cockos.com/licecap/))
 3. Browser at 1920×1080 or 1280×720
 
-## Suggested 10–15s Flow
+## Suggested Flow (upload → start → progress → results)
 
-1. **Start:** Login page with cursor near email field  
-2. **0–2s:** Enter `admin@acme.com` / `DemoPass123!` → Log in  
-3. **2–4s:** Datasets list (shows Q1 Marketing Spend, Demo: Marketing Spend)  
-4. **4–6s:** Click a dataset → Upload area or run list  
-5. **6–8s:** Click a run → Run progress or results  
-6. **8–10s:** Navigate to Analytics tab  
-7. **10–12s:** Analytics dashboard with charts  
-8. **End:** Fade or hold on dashboard  
+1. **Login** — `demo@etl.com` / `DemoPass123!`
+2. **Upload** — Go to dataset "Demo: Marketing Spend" → upload sample.csv (or use Download from /demo)
+3. **Mapping** — Map columns (date, campaign, channel, spend) → Save → Start import
+4. **Progress (SSE)** — Watch run page with live progress bar updating
+5. **Results** — Navigate to View results → show table with records
 
-## Alternative Shorter Flow (6–8s)
+## Shorter Alternative (6–8s)
 
-1. Login (pre-filled: admin@acme.com)  
-2. Datasets list  
-3. Click dataset → run results  
-4. Analytics  
+1. Login (pre-filled)
+2. Click dataset → show upload
+3. Click Run A or B → show run/results
+4. Compare page → show diff cards
 
 ## Tips
 
-- Pre-fill the login form before recording, or use a password manager for speed  
-- Pause 0.5s on each key screen so viewers can read  
-- Hide the cursor between actions if it distracts  
-- Export as GIF (optimized, ~2–5MB) or MP4 (smaller, better quality)  
+- Pause 0.5s on each key screen
+- Export as GIF (~2–5MB) or MP4 (smaller, better quality)
+- Hide cursor between actions if it distracts
 
 ## Output
 
-Save to `docs/demo.gif` (or `docs/demo.mp4`) for inclusion in README:
+Save to `docs/demo.gif` (or `docs/demo.mp4`):
 
 ```markdown
 ## Demo

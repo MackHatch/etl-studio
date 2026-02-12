@@ -5,10 +5,10 @@
 
 help:
 	@echo "ETL Studio - available targets:"
-	@echo "  make demo  - One-command demo: reset + seed + start app (prints URLs & creds)"
+	@echo "  make demo  - One-command: up -d, migrate, seed, start (prints URLs)"
 	@echo "  make dev   - Start full stack (docker compose up)"
-	@echo "  make reset - Reset DB, run migrations, seed demo"
-	@echo "  make seed  - Seed demo data (requires DB up, SEED_DEMO=true)"
+	@echo "  make reset - Down -v, up, migrate, seed (drop volumes)"
+	@echo "  make seed  - Seed demo (DB must be up, SEED_DEMO=true)"
 	@echo "  make up    - docker compose up -d"
 	@echo "  make down  - docker compose down"
 
@@ -26,18 +26,18 @@ up:
 down:
 	docker compose down
 
-# Reset database: downgrade, upgrade, seed demo
-# Optional: ADMIN_EMAIL, ADMIN_PASSWORD (e.g. make reset ADMIN_EMAIL=admin@acme.com ADMIN_PASSWORD=DemoPass123!)
+# Reset: drop volumes, up, migrate, seed
 reset: down
-	@echo ">>> Starting postgres for reset..."
-	@docker compose up -d postgres redis
+	@docker compose down -v 2>/dev/null || true
+	@echo ">>> Starting postgres, redis, minio..."
+	@docker compose up -d postgres redis minio minio-init
+	@echo ">>> Waiting for postgres..."
 	@sleep 5
-	@echo ">>> Resetting migrations..."
-	@cd backend && uv run alembic downgrade base 2>/dev/null || true
+	@echo ">>> Migrating..."
 	@cd backend && uv run alembic upgrade head
 	@echo ">>> Seeding demo..."
-	@ADMIN_EMAIL="$(or $(ADMIN_EMAIL),admin@example.com)" \
-	 ADMIN_PASSWORD="$(or $(ADMIN_PASSWORD),adminpassword)" \
+	@ADMIN_EMAIL="$(or $(ADMIN_EMAIL),demo@etl.com)" \
+	 ADMIN_PASSWORD="$(or $(ADMIN_PASSWORD),DemoPass123!)" \
 	 DATABASE_URL=postgresql+asyncpg://etl_user:etl_password@localhost:5432/etl_db \
 	 REDIS_URL=redis://localhost:6379/0 \
 	 JWT_SECRET=dev-secret \
@@ -47,26 +47,41 @@ reset: down
 
 # Seed demo only (DB must be up)
 seed:
-	@uv run --package backend python backend/scripts/reset_and_seed.py
+	@ADMIN_EMAIL="$(or $(ADMIN_EMAIL),demo@etl.com)" \
+	 ADMIN_PASSWORD="$(or $(ADMIN_PASSWORD),DemoPass123!)" \
+	 SEED_DEMO=true \
+	 uv run --package backend python backend/scripts/reset_and_seed.py
 
-# One-command demo: reset DB, seed Acme demo, start full stack, print URLs + creds
+# One-command demo: compose up -d, migrate, seed, start, print URLs
 demo:
-	$(MAKE) reset ADMIN_EMAIL=admin@acme.com ADMIN_PASSWORD=DemoPass123!
+	@echo ">>> Starting services (postgres, redis, minio, otel, jaeger, flower)..."
+	@docker compose up -d postgres redis minio minio-init otel-collector jaeger flower
+	@echo ">>> Waiting for postgres..."
+	@sleep 5
+	@echo ">>> Migrating..."
+	@cd backend && uv run alembic upgrade head
+	@echo ">>> Seeding demo..."
+	@ADMIN_EMAIL=demo@etl.com \
+	 ADMIN_PASSWORD=DemoPass123! \
+	 DATABASE_URL=postgresql+asyncpg://etl_user:etl_password@localhost:5432/etl_db \
+	 REDIS_URL=redis://localhost:6379/0 \
+	 JWT_SECRET=dev-secret \
+	 SEED_DEMO=true \
+	 uv run --package backend python backend/scripts/reset_and_seed.py
 	@echo ""
 	@echo "========================================"
 	@echo "  2-MINUTE DEMO - ETL Studio"
 	@echo "========================================"
 	@echo ""
-	@echo "  App:       http://localhost:3000"
-	@echo "  API docs:  http://localhost:8000/docs"
-	@echo "  Flower:    http://localhost:5555"
-	@echo "  MinIO:     http://localhost:9001"
+	@echo "  App:        http://localhost:3000"
+	@echo "  Demo page:  http://localhost:3000/demo"
+	@echo "  API docs:   http://localhost:8000/docs"
+	@echo "  Flower:     http://localhost:5555"
+	@echo "  MinIO:      http://localhost:9001"
+	@echo "  Jaeger:     http://localhost:16686"
 	@echo ""
-	@echo "  Demo login:"
-	@echo "    admin@acme.com   / DemoPass123!  (ADMIN)"
-	@echo "    analyst@acme.com / DemoPass123!  (ADMIN)"
-	@echo "    member@acme.com  / DemoPass123!  (MEMBER)"
+	@echo "  Login: demo@etl.com / DemoPass123!"
 	@echo ""
-	@echo "  Starting full stack..."
+	@echo "  Starting backend + worker + frontend..."
 	@echo ""
-	@docker compose up --build
+	@docker compose up --build backend worker frontend
